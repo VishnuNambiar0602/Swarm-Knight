@@ -1,160 +1,141 @@
 # Swarm-Knight
 
-Multi-LLM collaboration via debate/refinement. Run coding tasks with multiple AI models working together.
+Multi-LLM collaboration via debate/refinement with consensus engine, memory, and reputation tracking.
+
+## v2.0 - What's New
+
+### Consensus Engine
+- **Confidence-based termination** - stops when consensus > 85%
+- **Early stopping** - detects when no improvement for 2 rounds
+- **Automatic round estimation** - adjusts based on task complexity
+
+### Memory System
+- **Long-term memory** - persists across sessions
+- **Project memory** - per-project context
+- **Agent-specific memory** - tracks what each agent learned
+- **Semantic retrieval** - finds relevant past solutions
+
+### Dynamic Agent Generation
+- **Auto-detect task type** - analyzes your query to pick the right agents
+- **Automatic role assignment** - generator, critic, reviewer based on task
+- **Reputation-based selection** - better agents get picked first
+
+### Parallel Execution
+- **asyncio orchestration** - all agents run simultaneously
+- **Streaming aggregation** - results collected as they complete
+- **Timeout protection** - prevents stuck agents
+
+### Agent Reputation
+- **Accuracy tracking** - scores based on task success
+- **Latency tracking** - faster agents ranked higher
+- **Consensus contribution** - agents that help reach consensus get boosted
+- **Hallucination detection** - flags unreliable agents
 
 ## Quick Start
 
 ```bash
-# First time setup
-python swarm.py init
+# Setup
+knight init
 
-# Run a task
-python swarm.py run "Build a shopping cart component"
+# Run with auto-generated agents
+knight run "Build a shopping cart"
 
-# With options
-python swarm.py run "Create a REST API" --preset coding --rounds 5
+# Run with specific config
+knight run "Create a REST API" --preset coding --rounds 5 --agents 8
+
+# Show stats
+knight stats
 ```
 
 ## Commands
 
-### `knight run`
+| Command | Description |
+|---------|-------------|
+| `knight run "task"` | Run a swarm task |
+| `knight models` | List available models |
+| `knight init` | Setup configuration |
+| `knight stats` | Show system statistics |
+| `knight clear-cache` | Clear all caches |
 
-Run a swarm task with multiple AI models.
+## Options
 
-```bash
-knight run "Build a responsive navbar"
-knight run "Create a login page" --preset ecommerce
-knight run "Write unit tests" --rounds 5 --verbose
-```
-
-**Options:**
-- `--preset, -p` - Preset config: `coding` (default), `ecommerce`
-- `--rounds, -r` - Max debate rounds (1-10, default: 3)
-- `--models, -m` - Comma-separated model names to use
-- `--api-key, -k` - OpenRouter API key (or set `OPENROUTER_API_KEY`)
-- `--verbose, -V` - Show detailed output
-
-### `knight models`
-
-List available models.
-
-```bash
-knight models                    # List free OpenRouter models
-knight models --provider ollama  # List local Ollama models
-```
-
-### `knight presets`
-
-Show available presets.
-
-### `knight init`
-
-Initialize configuration (saves API key to `~/.swarm-knight/config.json`).
-
-## Presets
-
-### Coding (Default)
-Best for general coding tasks:
-- **Laguna M.1** - Core coding
-- **Kimi K2.6** - Assembly & orchestration  
-- **Nemotron 3 Super** - Review & QA
-
-### E-Commerce
-Full e-commerce development with 6 specialized models:
-- **Nemotron 3 Super** - Planning
-- **GPT-OSS 120B** - Architecture
-- **MiniMax M2.5** - Design
-- **Gemma 4 31B** - Styling
-- **Laguna M.1** - Components
-- **Kimi K2.6** - Assembly
-
-## Environment Variables
-
-```bash
-export OPENROUTER_API_KEY="your-key-here"
-```
-
-Get a free key at: https://openrouter.ai/keys
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--preset, -p` | auto | Preset: auto, coding, ecommerce |
+| `--rounds, -r` | 5 | Max debate rounds (1-20) |
+| `--agents, -a` | 6 | Max agents (2-20) |
+| `--models, -m` | - | Comma-separated model names |
+| `--api-key, -k` | - | OpenRouter API key |
+| `--no-memory` | false | Disable memory system |
+| `--no-reputation` | false | Disable reputation tracking |
+| `--verbose, -V` | false | Show detailed output |
 
 ## How It Works
 
-1. **Initial Generation** - All models generate solutions independently
-2. **Cross-Critique** - Each model critiques the others' solutions
-3. **Refinement** - Models improve based on feedback
-4. **Repeat** - Until consensus or max rounds reached
-5. **Selection** - Best solution is selected
+```
+User Query
+    ↓
+[Dynamic Agent Generation] - Analyzes task, picks right agents
+    ↓
+[Parallel Generation] - All agents generate solutions simultaneously
+    ↓
+[Cross-Critique] - Each agent critiques others' solutions
+    ↓
+[Refinement] - Agents improve based on feedback
+    ↓
+[Consensus Check] - If score > 85%, stop. If no improvement, stop.
+    ↓
+[Merge] - Combine best parts from all solutions
+    ↓
+[Memory Store] - Save for future sessions
+    ↓
+[Reputation Update] - Score all agents
+    ↓
+Final Output
+```
 
-## Example Session
+## Architecture
 
 ```
-$ knight run "Build a product card component"
+swarm/
+├── models.py          # Data models (Session, Agent, Memory, etc.)
+├── consensus.py       # Core consensus engine
+├── memory.py          # Long-term, project, agent memory
+├── reputation.py      # Agent reputation tracking
+├── dynamic_agents.py  # Auto-generate agents from query
+├── parallel.py        # Parallel execution engine
+├── cache.py           # Response, embedding, tool cache
+├── debate.py          # Debate round logic
+├── providers.py       # LLM provider abstraction
+├── orchestrator.py    # High-level interface
+└── cli.py             # CLI interface
+```
 
- ███╗   ███╗██╗███╗   ██╗███████╗ ██████╗ █████╗ ███╗   ██╗
- ████╗ ████║██║████╗  ██║██╔════╝██╔════╝██╔══██╗████╗  ██║
- ██╔████╔██║██║██╔██╗ ██║███████╗██║     ███████║██╔██╗ ██║
- ██║╚██╔╝██║██║██║╚██╗██║╚════██║██║     ██╔══██║██║╚██╗██║
- ██║ ╚═╝ ██║██║██║ ╚████║███████║╚██████╗██║  ██║██║ ╚████║
- ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝
+## Free Models
 
-            Multi-LLM Collaboration
+All pre-configured models are free on OpenRouter:
 
-  Task Configuration
-  ┌─────────────┬─────────────────────────────────┐
-  │ Task        │ Build a product card component  │
-  │ Models      │ 3                               │
-  │ Max Rounds  │ 3                               │
-  │ Pattern     │ Debate/Refinement               │
-  └─────────────┴─────────────────────────────────┘
+| Model | Best For |
+|-------|----------|
+| Nemotron 3 Super | Planning, QA |
+| GPT-OSS 120B | Architecture, Logic |
+| MiniMax M2.5 | Layout, Visual |
+| Gemma 4 31B | Color, Style |
+| Laguna M.1 | Coding |
+| Laguna XS.2 | Fast Iteration |
+| Kimi K2.6 | Full-page Assembly |
+| Nemotron Nano 12B VL | Multimodal, OCR |
+| GLM 4.5 Air | Tagging, Extraction |
 
-  Participants
-  ┌─────────────────┬──────────────────────┬───────────┐
-  │ Name            │ Model                │ Role      │
-  ├─────────────────┼──────────────────────┼───────────┤
-  │ Laguna Coder    │ poolside-laguna-m-1  │ generator │
-  │ Kimi Assembler  │ kimi-k2.6            │ generator │
-  │ Nemotron Review │ nemotron-3-super     │ critic    │
-  └─────────────────┴──────────────────────┴───────────┘
+## Configuration
 
-  Round 1 started...
-  Consensus: 45%
+Config saved to `~/.swarm-knight/config.json`:
 
-  Round 2 started...
-  Consensus: 72%
-
-  Round 3 started...
-  Consensus: 89%
-
-  Completed in 45.2s
-
-  Result
-  ┌─────────────────────────────────────────────────────┐
-  │ Swarm Completed!                                    │
-  │                                                     │
-  │ Best solution from: Laguna Coder                    │
-  │ Rounds: 3                                           │
-  │ Consensus: Yes                                      │
-  │ Time: 45.2s                                         │
-  └─────────────────────────────────────────────────────┘
-
-  Generated Code
-  ┌─────────────────────────────────────────────────────┐
-  │ import React from 'react';                          │
-  │                                                     │
-  │ interface ProductCardProps {                         │
-  │   name: string;                                     │
-  │   price: number;                                    │
-  │   image: string;                                    │
-  │ }                                                   │
-  │                                                     │
-  │ export const ProductCard = ({ name, price, image }) │
-  │   => {                                              │
-  │   return (                                          │
-  │     <div className="product-card">                  │
-  │       <img src={image} alt={name} />                │
-  │       <h3>{name}</h3>                               │
-  │       <p>${price}</p>                               │
-  │     </div>                                          │
-  │   );                                                │
-  │ };                                                  │
-  └─────────────────────────────────────────────────────┘
+```json
+{
+  "api_key": "your-key",
+  "default_rounds": 5,
+  "enable_memory": true,
+  "enable_reputation": true
+}
 ```

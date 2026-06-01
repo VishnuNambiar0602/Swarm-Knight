@@ -1,25 +1,25 @@
-"""Swarm data models for multi-LLM collaboration."""
+"""Swarm-Knight Core Models - Extended for consensus, memory, reputation."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 
 class ParticipantRole(str, Enum):
-    """Roles a swarm participant can take."""
     GENERATOR = "generator"
     CRITIC = "critic"
     REFINER = "refiner"
     COORDINATOR = "coordinator"
+    PLANNER = "planner"
+    REVIEWER = "reviewer"
 
 
 class ProviderType(str, Enum):
-    """Supported LLM provider types."""
     OPENROUTER = "openrouter"
     OLLAMA = "ollama"
     VLLM = "vllm"
@@ -30,7 +30,6 @@ class ProviderType(str, Enum):
 
 
 class SwarmParticipant(BaseModel):
-    """A single LLM participant in the swarm."""
     id: str = Field(default_factory=lambda: uuid4().hex[:12])
     name: str
     provider: ProviderType
@@ -40,14 +39,15 @@ class SwarmParticipant(BaseModel):
     base_url: Optional[str] = None
     max_tokens: int = 4096
     temperature: float = 0.7
-    # Provider-specific capabilities
     supports_tools: bool = False
     supports_vision: bool = False
     context_window: int = 128_000
+    # Dynamic fields
+    auto_generated: bool = False
+    task_description: Optional[str] = None
 
 
 class Critique(BaseModel):
-    """A critique from one participant about another's solution."""
     critic_id: str
     target_id: str
     content: str
@@ -55,10 +55,10 @@ class Critique(BaseModel):
     weaknesses: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
     score: float = Field(default=0.0, ge=0.0, le=10.0)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class DebateRound(BaseModel):
-    """A single round of debate/refinement."""
     round_number: int
     solutions: dict[str, str] = Field(default_factory=dict)
     critiques: list[Critique] = Field(default_factory=list)
@@ -66,14 +66,17 @@ class DebateRound(BaseModel):
     started_at: datetime = Field(default_factory=datetime.now)
     completed_at: Optional[datetime] = None
     consensus_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    improvement_delta: float = 0.0
+    confidence_scores: dict[str, float] = Field(default_factory=dict)
 
 
 class SwarmStatus(str, Enum):
-    """Status of a swarm session."""
     INITIALIZING = "initializing"
+    PLANNING = "planning"
     GENERATING = "generating"
     DEBATING = "debating"
     REFINING = "refining"
+    MERGING = "merging"
     CONSENSUS = "consensus"
     COMPLETED = "completed"
     ERROR = "error"
@@ -81,17 +84,20 @@ class SwarmStatus(str, Enum):
 
 
 class SwarmConfig(BaseModel):
-    """Configuration for swarm behavior."""
-    max_rounds: int = Field(default=3, ge=1, le=10)
-    consensus_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-    min_improvement: float = Field(default=0.05, ge=0.0, le=1.0)
-    enable_parallel_generation: bool = True
-    enable_cross_critique: bool = True
-    timeout_seconds: int = Field(default=300, ge=30)
+    max_rounds: int = Field(default=5, ge=1, le=20)
+    consensus_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    early_stop_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    min_improvement: float = Field(default=0.02, ge=0.0, le=1.0)
+    enable_parallel: bool = True
+    enable_memory: bool = True
+    enable_reputation: bool = True
+    enable_dynamic_agents: bool = True
+    max_agents: int = Field(default=8, ge=2, le=20)
+    timeout_seconds: int = Field(default=600, ge=30)
+    cache_enabled: bool = True
 
 
 class SwarmSession(BaseModel):
-    """A swarm collaboration session."""
     id: str = Field(default_factory=lambda: uuid4().hex)
     task: str
     description: Optional[str] = None
@@ -106,14 +112,15 @@ class SwarmSession(BaseModel):
     consensus_reached: bool = False
     created_at: datetime = Field(default_factory=datetime.now)
     completed_at: Optional[datetime] = None
-    # Metadata
     total_tokens_used: int = 0
     total_api_calls: int = 0
     error_message: Optional[str] = None
+    # Planning metadata
+    task_type: Optional[str] = None
+    required_capabilities: list[str] = Field(default_factory=list)
 
 
 class SwarmResult(BaseModel):
-    """Result of a swarm collaboration."""
     session_id: str
     output: str
     best_participant_id: str
@@ -124,100 +131,66 @@ class SwarmResult(BaseModel):
     all_solutions: dict[str, str] = Field(default_factory=dict)
     duration_seconds: float = 0.0
     tokens_used: int = 0
+    agent_scores: dict[str, float] = Field(default_factory=dict)
+    memory_saved: bool = False
 
 
-# Pre-configured free OpenRouter models for e-commerce swarm
-FREE_OPENROUTER_MODELS = {
-    "planner": SwarmParticipant(
-        name="Nemotron Planner",
-        provider=ProviderType.OPENROUTER,
-        model="nvidia/nemotron-3-super-49b:free",
-        role=ParticipantRole.COORDINATOR,
-        context_window=1_000_000,
-        supports_tools=True,
-    ),
-    "architect": SwarmParticipant(
-        name="GPT-OSS Architect",
-        provider=ProviderType.OPENROUTER,
-        model="openai/gpt-oss-120b:free",
-        role=ParticipantRole.GENERATOR,
-        supports_tools=True,
-    ),
-    "designer": SwarmParticipant(
-        name="MiniMax Designer",
-        provider=ProviderType.OPENROUTER,
-        model="minimax/minimax-m2.5:free",
-        role=ParticipantRole.GENERATOR,
-        context_window=1_000_000,
-    ),
-    "stylist": SwarmParticipant(
-        name="Gemma Stylist",
-        provider=ProviderType.OPENROUTER,
-        model="google/gemma-4-31b:free",
-        role=ParticipantRole.GENERATOR,
-        supports_vision=True,
-    ),
-    "coder": SwarmParticipant(
-        name="Laguna Coder",
-        provider=ProviderType.OPENROUTER,
-        model="poolside/poolside-laguna-m-1:free",
-        role=ParticipantRole.GENERATOR,
-        supports_tools=True,
-    ),
-    "itercoder": SwarmParticipant(
-        name="Laguna Fast",
-        provider=ProviderType.OPENROUTER,
-        model="poolside/poolside-laguna-xs-2:free",
-        role=ParticipantRole.REFINER,
-    ),
-    "assembler": SwarmParticipant(
-        name="Kimi Assembler",
-        provider=ProviderType.OPENROUTER,
-        model="moonshotai/kimi-k2.6:free",
-        role=ParticipantRole.GENERATOR,
-        context_window=1_000_000,
-    ),
-    "reviewer": SwarmParticipant(
-        name="Nemotron Reviewer",
-        provider=ProviderType.OPENROUTER,
-        model="nvidia/nemotron-3-super-49b:free",
-        role=ParticipantRole.CRITIC,
-        context_window=1_000_000,
-    ),
-    "extractor": SwarmParticipant(
-        name="Nemotron Extractor",
-        provider=ProviderType.OPENROUTER,
-        model="nvidia/nemotron-nano-12b-2-vl:free",
-        role=ParticipantRole.GENERATOR,
-        supports_vision=True,
-    ),
-    "tagger": SwarmParticipant(
-        name="GLM Tagger",
-        provider=ProviderType.OPENROUTER,
-        model="z-ai/glm-4.5-air:free",
-        role=ParticipantRole.GENERATOR,
-        supports_tools=True,
-    ),
+# Agent Reputation Model
+class AgentReputation(BaseModel):
+    agent_id: str
+    agent_name: str
+    model: str
+    total_tasks: int = 0
+    successful_tasks: int = 0
+    total_score: float = 0.0
+    avg_score: float = 0.0
+    avg_latency_ms: float = 0.0
+    hallucination_count: int = 0
+    consensus_contributions: int = 0
+    last_used: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+# Memory Models
+class MemoryType(str, Enum):
+    LONG_TERM = "long_term"
+    PROJECT = "project"
+    AGENT_SPECIFIC = "agent_specific"
+    TASK_HISTORY = "task_history"
+
+
+class MemoryEntry(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    memory_type: MemoryType
+    content: str
+    embedding: Optional[list[float]] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    agent_id: Optional[str] = None
+    project_id: Optional[str] = None
+    relevance_score: float = 0.0
+    created_at: datetime = Field(default_factory=datetime.now)
+    accessed_at: Optional[datetime] = None
+    access_count: int = 0
+
+
+class TaskPlan(BaseModel):
+    task_type: str
+    subtasks: list[str] = Field(default_factory=list)
+    required_roles: list[ParticipantRole] = Field(default_factory=list)
+    complexity: float = Field(default=0.5, ge=0.0, le=1.0)
+    estimated_rounds: int = 3
+
+
+# Free OpenRouter Models
+FREE_MODELS = {
+    "planner": {"model": "nvidia/nemotron-3-super-49b:free", "name": "Nemotron Planner", "ctx": 1_000_000},
+    "architect": {"model": "openai/gpt-oss-120b:free", "name": "GPT-OSS Architect", "ctx": 128_000},
+    "designer": {"model": "minimax/minimax-m2.5:free", "name": "MiniMax Designer", "ctx": 1_000_000},
+    "stylist": {"model": "google/gemma-4-31b:free", "name": "Gemma Stylist", "ctx": 128_000},
+    "coder": {"model": "poolside/poolside-laguna-m-1:free", "name": "Laguna Coder", "ctx": 128_000},
+    "fast": {"model": "poolside/poolside-laguna-xs-2:free", "name": "Laguna Fast", "ctx": 128_000},
+    "assembler": {"model": "moonshotai/kimi-k2.6:free", "name": "Kimi Assembler", "ctx": 1_000_000},
+    "reviewer": {"model": "nvidia/nemotron-3-super-49b:free", "name": "Nemotron Reviewer", "ctx": 1_000_000},
+    "extractor": {"model": "nvidia/nemotron-nano-12b-2-vl:free", "name": "Nemotron Extractor", "ctx": 128_000},
+    "tagger": {"model": "z-ai/glm-4.5-air:free", "name": "GLM Tagger", "ctx": 128_000},
 }
-
-
-def get_ecommerce_swarm_config() -> list[SwarmParticipant]:
-    """Get pre-configured participants for e-commerce development."""
-    return [
-        FREE_OPENROUTER_MODELS["planner"],
-        FREE_OPENROUTER_MODELS["architect"],
-        FREE_OPENROUTER_MODELS["designer"],
-        FREE_OPENROUTER_MODELS["coder"],
-        FREE_OPENROUTER_MODELS["assembler"],
-        FREE_OPENROUTER_MODELS["reviewer"],
-    ]
-
-
-def get_coding_swarm_config() -> list[SwarmParticipant]:
-    """Get pre-configured participants for general coding tasks."""
-    return [
-        FREE_OPENROUTER_MODELS["coder"],
-        FREE_OPENROUTER_MODELS["itercoder"],
-        FREE_OPENROUTER_MODELS["assembler"],
-        FREE_OPENROUTER_MODELS["reviewer"],
-    ]
