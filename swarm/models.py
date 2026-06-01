@@ -64,6 +64,9 @@ class Agent(BaseModel):
     system_prompt: Optional[str] = None
 
 
+SwarmParticipant = Agent
+
+
 class Critique(BaseModel):
     critic_id: str
     target_id: str
