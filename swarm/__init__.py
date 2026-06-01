@@ -1,45 +1,34 @@
-"""Swarm-Knight - Multi-LLM Collaboration via Debate/Refinement."""
+"""Swarm-Knight - Production-ready multi-LLM collaboration."""
 
 from .models import (
-    SwarmParticipant,
-    SwarmSession,
-    DebateRound,
-    Critique,
-    SwarmResult,
-    SwarmConfig,
-    AgentReputation,
-    MemoryEntry,
-    MemoryType,
-    TaskPlan,
-    ParticipantRole,
-    ProviderType,
-    SwarmStatus,
+    Agent, AgentRole, Critique, Judgment, Round, Session, SessionStatus,
+    SwarmConfig, SwarmResult, TaskPlan, AgentReputation, MemoryEntry,
+    MemoryType, Metrics, FREE_MODELS,
 )
-from .consensus import ConsensusEngine, consensus_engine
-from .orchestrator import SwarmOrchestrator, swarm_orchestrator
-from .memory import MemorySystem, memory_system
-from .reputation import ReputationSystem, reputation_system
-from .dynamic_agents import DynamicAgentGenerator, dynamic_generator
-from .parallel import ParallelEngine, parallel_engine, TaskResult
-from .cache import CacheSystem, cache_system
-from .providers import OpenSourceProvider, OpenRouterProvider, OllamaProvider
+from .knight import Knight, knight
+from .memory import Memory, memory
+from .reputation import Reputation, reputation
+from .metrics import MetricsCollector, metrics
+from .cache import Cache, cache
+from .retry import RetryQueue, retry_queue
+from .parallel import ParallelEngine
+from .providers import OpenSourceProvider, OpenRouterProvider, OllamaProvider, create_provider
+
+__version__ = "2.1.0"
 
 __all__ = [
-    "SwarmParticipant", "SwarmSession", "DebateRound", "Critique", "SwarmResult",
-    "SwarmConfig", "AgentReputation", "MemoryEntry", "MemoryType", "TaskPlan",
-    "ParticipantRole", "ProviderType", "SwarmStatus",
-    "ConsensusEngine", "consensus_engine",
-    "SwarmOrchestrator", "swarm_orchestrator",
-    "MemorySystem", "memory_system",
-    "ReputationSystem", "reputation_system",
-    "DynamicAgentGenerator", "dynamic_generator",
-    "ParallelEngine", "parallel_engine", "TaskResult",
-    "CacheSystem", "cache_system",
-    "OpenSourceProvider", "OpenRouterProvider", "OllamaProvider",
+    "Agent", "AgentRole", "Critique", "Judgment", "Round", "Session",
+    "SessionStatus", "SwarmConfig", "SwarmResult", "TaskPlan",
+    "AgentReputation", "MemoryEntry", "MemoryType", "Metrics",
+    "Knight", "knight",
+    "Memory", "memory",
+    "Reputation", "reputation",
+    "MetricsCollector", "metrics",
+    "Cache", "cache",
+    "RetryQueue", "retry_queue",
+    "ParallelEngine",
+    "OpenSourceProvider", "OpenRouterProvider", "OllamaProvider", "create_provider",
 ]
-
-__version__ = "2.0.0"
-
 
 def cli():
     from .cli import app

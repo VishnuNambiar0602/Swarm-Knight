@@ -1,133 +1,93 @@
-"""Performance Cache - Response caching, embedding cache, tool-result cache."""
+"""Cache System - Response, embedding, and tool-result caching."""
 
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import time
 from collections import OrderedDict
-from pathlib import Path
 from typing import Any, Optional
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("swarm.cache")
 
 
-class LRUCache:
-    """LRU cache with TTL support."""
+class LRU:
+    """LRU cache with TTL."""
 
-    def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600):
+    def __init__(self, max_size: int = 500, ttl: int = 3600):
         self.max_size = max_size
-        self.ttl_seconds = ttl_seconds
-        self._cache: OrderedDict[str, tuple[Any, float]] = OrderedDict()
+        self.ttl = ttl
+        self._data: OrderedDict[str, tuple[Any, float]] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
 
     def get(self, key: str) -> Optional[Any]:
-        if key in self._cache:
-            value, ts = self._cache[key]
-            if time.time() - ts < self.ttl_seconds:
-                self._cache.move_to_end(key)
-                return value
-            else:
-                del self._cache[key]
+        if key in self._data:
+            val, ts = self._data[key]
+            if time.time() - ts < self.ttl:
+                self._data.move_to_end(key)
+                self.hits += 1
+                return val
+            del self._data[key]
+        self.misses += 1
         return None
 
     def set(self, key: str, value: Any):
-        if key in self._cache:
-            del self._cache[key]
-        self._cache[key] = (value, time.time())
-        if len(self._cache) > self.max_size:
-            self._cache.popitem(last=False)
-
-    def invalidate(self, key: str) -> bool:
-        if key in self._cache:
-            del self._cache[key]
-            return True
-        return False
-
-    def clear(self):
-        self._cache.clear()
+        if key in self._data:
+            del self._data[key]
+        self._data[key] = (value, time.time())
+        if len(self._data) > self.max_size:
+            self._data.popitem(last=False)
 
     def size(self) -> int:
-        return len(self._cache)
+        return len(self._data)
+
+    def hit_rate(self) -> str:
+        total = self.hits + self.misses
+        return f"{self.hits / total:.1%}" if total > 0 else "0%"
+
+    def clear(self):
+        self._data.clear()
+        self.hits = 0
+        self.misses = 0
 
 
-class CacheSystem:
-    """Multi-layer cache for responses, embeddings, and tool results."""
+class Cache:
+    """Multi-layer cache."""
 
-    def __init__(self, storage_dir: Optional[Path] = None):
-        self.storage_dir = storage_dir or Path.home() / ".swarm-knight" / "cache"
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self):
+        self.responses = LRU(max_size=500, ttl=7200)
+        self.embeddings = LRU(max_size=2000, ttl=86400)
+        self.plans = LRU(max_size=100, ttl=3600)
 
-        self.response_cache = LRUCache(max_size=500, ttl_seconds=7200)
-        self.embedding_cache = LRUCache(max_size=2000, ttl_seconds=86400)
-        self.tool_cache = LRUCache(max_size=300, ttl_seconds=1800)
-        self.plan_cache = LRUCache(max_size=100, ttl_seconds=3600)
+    def get(self, layer: str, *parts: str) -> Optional[Any]:
+        key = self._key(layer, *parts)
+        lru = getattr(self, layer, None)
+        if lru:
+            return lru.get(key)
+        return None
 
-        self._stats = {"hits": 0, "misses": 0}
+    def set(self, layer: str, value: Any, *parts: str):
+        key = self._key(layer, *parts)
+        lru = getattr(self, layer, None)
+        if lru:
+            lru.set(key, value)
 
-    def get_response(self, prompt: str, model: str) -> Optional[str]:
-        key = self._make_key("response", prompt, model)
-        result = self.response_cache.get(key)
-        if result:
-            self._stats["hits"] += 1
-        else:
-            self._stats["misses"] += 1
-        return result
-
-    def set_response(self, prompt: str, model: str, response: str):
-        key = self._make_key("response", prompt, model)
-        self.response_cache.set(key, response)
-
-    def get_embedding(self, text: str) -> Optional[list[float]]:
-        key = self._make_key("embedding", text)
-        return self.embedding_cache.get(key)
-
-    def set_embedding(self, text: str, embedding: list[float]):
-        key = self._make_key("embedding", text)
-        self.embedding_cache.set(key, embedding)
-
-    def get_tool_result(self, tool_name: str, params: str) -> Optional[str]:
-        key = self._make_key("tool", tool_name, params)
-        return self.tool_cache.get(key)
-
-    def set_tool_result(self, tool_name: str, params: str, result: str):
-        key = self._make_key("tool", tool_name, params)
-        self.tool_cache.set(key, result)
-
-    def get_plan(self, task: str) -> Optional[dict]:
-        key = self._make_key("plan", task)
-        return self.plan_cache.get(key)
-
-    def set_plan(self, task: str, plan: dict):
-        key = self._make_key("plan", task)
-        self.plan_cache.set(key, plan)
-
-    def should_use_cache(self, task: str, model: str) -> bool:
-        key = self._make_key("response", task, model)
-        return self.response_cache.get(key) is not None
-
-    def get_stats(self) -> dict:
-        total = self._stats["hits"] + self._stats["misses"]
-        hit_rate = self._stats["hits"] / total if total > 0 else 0
-        return {
-            "hits": self._stats["hits"],
-            "misses": self._stats["misses"],
-            "hit_rate": f"{hit_rate:.1%}",
-            "response_cache_size": self.response_cache.size(),
-            "embedding_cache_size": self.embedding_cache.size(),
-            "tool_cache_size": self.tool_cache.size(),
-        }
-
-    def clear_all(self):
-        self.response_cache.clear()
-        self.embedding_cache.clear()
-        self.tool_cache.clear()
-        self.plan_cache.clear()
-        self._stats = {"hits": 0, "misses": 0}
-
-    def _make_key(self, prefix: str, *parts: str) -> str:
-        content = f"{prefix}:{':'.join(parts)}"
+    def _key(self, layer: str, *parts: str) -> str:
+        content = f"{layer}:{':'.join(str(p) for p in parts)}"
         return hashlib.sha256(content.encode()).hexdigest()[:32]
 
+    def get_stats(self) -> dict:
+        return {
+            "responses": {"size": self.responses.size(), "hit_rate": self.responses.hit_rate()},
+            "embeddings": {"size": self.embeddings.size(), "hit_rate": self.embeddings.hit_rate()},
+            "plans": {"size": self.plans.size(), "hit_rate": self.plans.hit_rate()},
+        }
 
-cache_system = CacheSystem()
+    def clear(self):
+        self.responses.clear()
+        self.embeddings.clear()
+        self.plans.clear()
+
+
+cache = Cache()
